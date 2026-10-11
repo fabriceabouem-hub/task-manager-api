@@ -49,6 +49,6 @@ dotnet test
 ```
 
 ## Roadmap
-- [ ] CI with GitHub Actions
+- [X] CI with GitHub Actions
 - [ ] Docker support
 - [ ] JWT authentication
