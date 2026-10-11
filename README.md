@@ -1,4 +1,5 @@
 # Task Manager API
+[![.NET Tests](https://github.com/fabriceabouem-hub/Task-Manager-API/actions/workflows/dotnet.yml/badge.svg)](https://github.com/fabriceabouem-hub/Task-Manager-API/actions/workflows/dotnet.yml)
 
 A REST API for managing tasks, built with ASP.NET Core 8 and Entity Framework Core.
 Personal project to practice backend development.
