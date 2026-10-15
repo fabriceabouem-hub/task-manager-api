@@ -1,6 +1,12 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using TaskManager.Api.Data;
 using TaskManager.Api.Models;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -9,6 +15,25 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=tasks.db"));
+
+var jwtKey = builder.Configuration["Jwt:Key"]
+   ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+
+// Configure JWT authentication
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -20,27 +45,25 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
-var summaries = new[]
+app.MapPost("/login", (LoginRequest request, IConfiguration config) =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    if (request.Username != config["Demo:Username"] || request.Password != config["Demo:Password"]) 
+        return Results.Unauthorized();
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:Key"]!));
+    var token = new JwtSecurityToken (
+        claims: new[]
+        {
+            new Claim(ClaimTypes.Name, request.Username)
+        },expires: DateTime.UtcNow.AddHours(1),
+        signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
-var tasks = app.MapGroup("/tasks");
+    return Results.Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token) });
+});
+var tasks = app.MapGroup("/tasks").RequireAuthorization();
+
 tasks.MapGet("/", async (AppDbContext db) =>
     await db.TaskItems.ToListAsync());
 
@@ -69,14 +92,10 @@ tasks.MapDelete("/{id}", async (int id, AppDbContext db) =>
 {
     var task = await db.TaskItems.FindAsync(id);
     if (task is null) return Results.NotFound();
+
     db.TaskItems.Remove(task);
     await db.SaveChangesAsync();
     return Results.NoContent();
 });
-
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+record LoginRequest(string Username, string Password);  
